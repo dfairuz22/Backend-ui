@@ -121,4 +121,36 @@ $app->put('/api/devices/{id}', function (Request $request, Response $response, a
     }
 });
 
+// Endpoint Login
+$app->post('/api/login', function (Request $request, Response $response) {
+    try {
+        $data = $request->getParsedBody();
+        $email = $data['email'] ?? '';
+        $password = $data['password'] ?? '';
+
+        $db = getDB();
+        $stmt = $db->prepare("SELECT * FROM users WHERE email = :email");
+        $stmt->execute([':email' => $email]);
+        $user = $stmt->fetch();
+
+        // Pengecekan menggunakan perbandingan langsung karena password di database plaintext
+        if ($user && $user['password'] === $password) {
+            $response->getBody()->write(json_encode([
+                'message' => 'Login berhasil',
+                'user' => [
+                    'name' => $user['name'],
+                    'email' => $user['email']
+                ]
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
+        } else {
+            $response->getBody()->write(json_encode(['error' => 'Email atau password salah']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+        }
+    } catch (PDOException $e) {
+        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
+});
+
 $app->run();
