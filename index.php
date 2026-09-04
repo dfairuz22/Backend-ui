@@ -36,7 +36,7 @@ $app->get('/', function (Request $request, Response $response) {
     return $response->withHeader('Content-Type', 'application/json');
 });
 
-// 1. READ: Ambil Semua Device (Diurutkan ASC dari ID terkecil ke terbesar)
+// 1. READ: Ambil Semua Device
 $app->get('/api/devices', function (Request $request, Response $response) {
     try {
         $db = getDB();
@@ -89,7 +89,7 @@ $app->delete('/api/devices/{id}', function (Request $request, Response $response
     }
 });
 
-// 4. Endpoint untuk Update Data Device berdasarkan ID
+// 4. UPDATE: Edit Data Device
 $app->put('/api/devices/{id}', function (Request $request, Response $response, array $args) {
     try {
         $id = $args['id'];
@@ -99,9 +99,7 @@ $app->put('/api/devices/{id}', function (Request $request, Response $response, a
         $location = $data['location'] ?? null;
         $status = $data['status'] ?? null;
 
-        // PERBAIKAN DI SINI: Menggunakan fungsi getDB() agar sama dengan endpoint lain
         $db = getDB();
-        
         $sql = "UPDATE devices SET name = :name, location = :location, status = :status WHERE id = :id";
         $stmt = $db->prepare($sql);
         $stmt->execute([
@@ -121,7 +119,7 @@ $app->put('/api/devices/{id}', function (Request $request, Response $response, a
     }
 });
 
-// Endpoint Login
+// 5. Endpoint Login (Plaintext check)
 $app->post('/api/login', function (Request $request, Response $response) {
     try {
         $data = $request->getParsedBody();
@@ -133,7 +131,6 @@ $app->post('/api/login', function (Request $request, Response $response) {
         $stmt->execute([':email' => $email]);
         $user = $stmt->fetch();
 
-        // Pengecekan menggunakan perbandingan langsung karena password di database plaintext
         if ($user && $user['password'] === $password) {
             $response->getBody()->write(json_encode([
                 'message' => 'Login berhasil',
@@ -147,6 +144,46 @@ $app->post('/api/login', function (Request $request, Response $response) {
             $response->getBody()->write(json_encode(['error' => 'Email atau password salah']));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
         }
+    } catch (PDOException $e) {
+        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
+});
+
+// 6. Endpoint Register (Menambahkan user baru ke database)
+$app->post('/api/register', function (Request $request, Response $response) {
+    try {
+        $data = $request->getParsedBody();
+        $name = $data['name'] ?? '';
+        $email = $data['email'] ?? '';
+        $password = $data['password'] ?? '';
+
+        // Validasi sederhana jika field kosong
+        if (empty($name) || empty($email) || empty($password)) {
+            $response->getBody()->write(json_encode(['error' => 'Semua kolom wajib diisi']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        $db = getDB();
+        
+        // Cek apakah email sudah terdaftar sebelumnya
+        $checkStmt = $db->prepare("SELECT id FROM users WHERE email = :email");
+        $checkStmt->execute([':email' => $email]);
+        if ($checkStmt->fetch()) {
+            $response->getBody()->write(json_encode(['error' => 'Email sudah terdaftar']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+        }
+
+        // Simpan data user baru (menyimpan password plaintext sesuai struktur tabelmu)
+        $stmt = $db->prepare("INSERT INTO users (name, email, password) VALUES (:name, :email, :password)");
+        $stmt->execute([
+            ':name' => $name,
+            ':email' => $email,
+            ':password' => $password
+        ]);
+
+        $response->getBody()->write(json_encode(['message' => 'Registrasi akun berhasil']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
     } catch (PDOException $e) {
         $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
