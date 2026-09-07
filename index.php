@@ -2,10 +2,14 @@
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Factory\AppFactory;
+
 require __DIR__ . '/vendor/autoload.php';
+
 $app = AppFactory::create();
 $app->addRoutingMiddleware();
 $app->addBodyParsingMiddleware();
+
+// Middleware CORS
 $app->add(function ($request, $handler) {
     $response = $handler->handle($request);
     return $response
@@ -32,21 +36,35 @@ function getDB() {
 }
 
 $app->get('/', function (Request $request, Response $response) {
-    $response->getBody()->write(json_encode(['status' => 'API Slim PHP 4 Running']));
+    $payload = [
+        'status'  => true,
+        'message' => 'API Slim PHP 4 Running'
+    ];
+    $response->getBody()->write(json_encode($payload));
     return $response->withHeader('Content-Type', 'application/json');
 });
 
-// 1. READ: Ambil Semua Device
+// 1. READ: Ambil Semua Device (Terbungkus / Wrapped)
 $app->get('/api/devices', function (Request $request, Response $response) {
     try {
         $db = getDB();
         $stmt = $db->query("SELECT * FROM devices ORDER BY id ASC");
         $devices = $stmt->fetchAll();
         
-        $response->getBody()->write(json_encode($devices));
-        return $response->withHeader('Content-Type', 'application/json');
+        $payload = [
+            'status'  => true,
+            'message' => 'Berhasil',
+            'data'    => $devices
+        ];
+
+        $response->getBody()->write(json_encode($payload));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     } catch (PDOException $e) {
-        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
@@ -59,15 +77,24 @@ $app->post('/api/devices', function (Request $request, Response $response) {
         
         $stmt = $db->prepare("INSERT INTO devices (name, location, status) VALUES (:name, :location, :status)");
         $stmt->execute([
-            ':name' => $data['name'],
+            ':name'     => $data['name'],
             ':location' => $data['location'],
-            ':status' => $data['status'] ?? 'OFF'
+            ':status'   => $data['status'] ?? 'OFF'
         ]);
+
+        $payload = [
+            'status'  => true,
+            'message' => 'Device berhasil ditambahkan'
+        ];
         
-        $response->getBody()->write(json_encode(['message' => 'Device berhasil ditambahkan']));
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
     } catch (PDOException $e) {
-        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
@@ -81,10 +108,19 @@ $app->delete('/api/devices/{id}', function (Request $request, Response $response
         $stmt = $db->prepare("DELETE FROM devices WHERE id = :id");
         $stmt->execute([':id' => $id]);
         
-        $response->getBody()->write(json_encode(['message' => 'Device berhasil dihapus']));
-        return $response->withHeader('Content-Type', 'application/json');
+        $payload = [
+            'status'  => true,
+            'message' => 'Device berhasil dihapus'
+        ];
+
+        $response->getBody()->write(json_encode($payload));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     } catch (PDOException $e) {
-        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
@@ -95,31 +131,38 @@ $app->put('/api/devices/{id}', function (Request $request, Response $response, a
         $id = $args['id'];
         $data = json_decode($request->getBody()->getContents(), true);
         
-        $name = $data['name'] ?? null;
+        $name     = $data['name'] ?? null;
         $location = $data['location'] ?? null;
-        $status = $data['status'] ?? null;
+        $status   = $data['status'] ?? null;
 
         $db = getDB();
         $sql = "UPDATE devices SET name = :name, location = :location, status = :status WHERE id = :id";
         $stmt = $db->prepare($sql);
         $stmt->execute([
-            ':name' => $name,
+            ':name'     => $name,
             ':location' => $location,
-            ':status' => $status,
-            ':id' => $id
+            ':status'   => $status,
+            ':id'       => $id
         ]);
 
-        $payload = json_encode(["message" => "Device berhasil di-update"]);
-        $response->getBody()->write($payload);
+        $payload = [
+            'status'  => true,
+            'message' => 'Device berhasil di-update'
+        ];
+
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     } catch (\PDOException $e) {
-        $error = json_encode(["error" => $e->getMessage()]);
-        $response->getBody()->write($error);
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
 
-// 5. Endpoint Login (Plaintext check)
+// 5. Endpoint Login
 $app->post('/api/login', function (Request $request, Response $response) {
     try {
         $data = $request->getParsedBody();
@@ -132,25 +175,35 @@ $app->post('/api/login', function (Request $request, Response $response) {
         $user = $stmt->fetch();
 
         if ($user && $user['password'] === $password) {
-            $response->getBody()->write(json_encode([
+            $payload = [
+                'status'  => true,
                 'message' => 'Login berhasil',
-                'user' => [
-                    'name' => $user['name'],
+                'data'    => [
+                    'name'  => $user['name'],
                     'email' => $user['email']
                 ]
-            ]));
+            ];
+            $response->getBody()->write(json_encode($payload));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
         } else {
-            $response->getBody()->write(json_encode(['error' => 'Email atau password salah']));
+            $payload = [
+                'status'  => false,
+                'message' => 'Email atau password salah'
+            ];
+            $response->getBody()->write(json_encode($payload));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
         }
     } catch (PDOException $e) {
-        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
 
-// 6. Endpoint Register (Menambahkan user baru ke database)
+// 6. Endpoint Register
 $app->post('/api/register', function (Request $request, Response $response) {
     try {
         $data = $request->getParsedBody();
@@ -158,34 +211,48 @@ $app->post('/api/register', function (Request $request, Response $response) {
         $email = $data['email'] ?? '';
         $password = $data['password'] ?? '';
 
-        // Validasi sederhana jika field kosong
         if (empty($name) || empty($email) || empty($password)) {
-            $response->getBody()->write(json_encode(['error' => 'Semua kolom wajib diisi']));
+            $payload = [
+                'status'  => false,
+                'message' => 'Semua kolom wajib diisi'
+            ];
+            $response->getBody()->write(json_encode($payload));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
 
         $db = getDB();
         
-        // Cek apakah email sudah terdaftar sebelumnya
         $checkStmt = $db->prepare("SELECT id FROM users WHERE email = :email");
         $checkStmt->execute([':email' => $email]);
         if ($checkStmt->fetch()) {
-            $response->getBody()->write(json_encode(['error' => 'Email sudah terdaftar']));
+            $payload = [
+                'status'  => false,
+                'message' => 'Email sudah terdaftar'
+            ];
+            $response->getBody()->write(json_encode($payload));
             return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
         }
 
-        // Simpan data user baru (menyimpan password plaintext sesuai struktur tabelmu)
         $stmt = $db->prepare("INSERT INTO users (name, email, password) VALUES (:name, :email, :password)");
         $stmt->execute([
-            ':name' => $name,
-            ':email' => $email,
+            ':name'     => $name,
+            ':email'    => $email,
             ':password' => $password
         ]);
 
-        $response->getBody()->write(json_encode(['message' => 'Registrasi akun berhasil']));
+        $payload = [
+            'status'  => true,
+            'message' => 'Registrasi akun berhasil'
+        ];
+
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
     } catch (PDOException $e) {
-        $response->getBody()->write(json_encode(['error' => $e->getMessage()]));
+        $payload = [
+            'status'  => false,
+            'message' => $e->getMessage()
+        ];
+        $response->getBody()->write(json_encode($payload));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
     }
 });
